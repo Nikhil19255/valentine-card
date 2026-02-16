@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Private Typing Effect — American Pronunciation (TTS)</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-2: #0b1220;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #2563eb;
+      --border: #1f2937;
+      --border-2: #334155;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 24px;
+      line-height: 1.6;
+    }
+    .container { max-width: 960px; margin: 0 auto; }
+    h1 { font-size: 1.35rem; margin: 0 0 12px 0; color: #e5e7eb; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+      margin-bottom: 16px;
+    }
+    label { font-size: 0.95rem; color: #cbd5e1; }
+    textarea, input[type="number"], select, input[type="range"], input[type="checkbox"] {
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border-2);
+      background: var(--panel-2);
+      color: var(--text);
+      outline: none;
+    }
+    textarea {
+      width: 100%;
+      min-height: 160px;
+      resize: vertical;
+      white-space: pre-wrap;
+    }
+    textarea:focus, input:focus, select:focus {
+      border-color: #60a5fa;
+      box-shadow: 0 0 0 3px rgba(96,165,250,0.2);
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .spacer { height: 6px; }
+    .hint { font-size: 0.9rem; color: var(--muted); }
+    button {
+      padding: 10px 16px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      background: var(--accent);
+      color: white;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button.secondary { background: #1f2937; color: #e5e7eb; border-color: #374151; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 10px; border-radius: 999px;
+      background: #0b1220; border: 1px solid var(--border-2);
+      color: #cbd5e1; font-size: 0.9rem;
+    }
+    .separator { width: 1px; height: 28px; background: var(--border-2); }
+    .grow { flex: 1 1 auto; }
+
+    .output {
+      position: relative;
+      white-space: pre-wrap;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      min-height: 180px;
+      font-size: 1.05rem;
+      overflow-y: auto;
+      max-height: 56vh;
+    }
+    .output.with-cursor::after {
+      content: '▮';
+      margin-left: 3px;
+      color: #e5e7eb;
+      animation: blink .9s steps(1) infinite;
+    }
+    @keyframes blink {
+      0%, 49% { opacity: 1; }
+      50%, 100% { opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Private Typing Effect — American Pronunciation (TTS)</h1>
+
+    <!-- INPUT AREA -->
+    <div id="inputCard" class="card">
+      <label for="inputText"><strong>Give your words/text:</strong></label>
+      <div class="spacer"></div>
+      <textarea
+        id="inputText"
+        placeholder="Type or paste your text here. Press Enter to submit (Shift+Enter for a new line)."
+        aria-label="Enter your text"
+      ></textarea>
+      <div class="row" style="margin-top: 10px;">
+        <button id="submitBtn">Submit (Hide Text)</button>
+        <span class="hint">Press <strong>Enter</strong> to submit. Use <strong>Shift+Enter</strong> for a newline.</span>
+      </div>
+      <div class="hint">Privacy: After submit, your text is <strong>cleared and hidden</strong>. It stays only in memory; nothing is sent anywhere.</div>
+    </div>
+
+    <!-- CONTROLS -->
+    <div id="controlCard" class="card" style="display: none;">
+      <div class="row">
+        <label for="mode" class="pill">Mode:
+          <select id="mode">
+            <option value="word">Word by word</option>
+            <option value="char">Character by character</option>
+          </select>
+        </label>
+
+        <label for="delay" class="pill">Delay (ms):
+          <input id="delay" type="number" min="0" step="25" value="1400" style="width: 110px;" />
+        </label>
+
+        <div class="separator"></div>
+
+        <!-- TTS Controls -->
+        <label class="pill">
+          <input id="ttsEnabled" type="checkbox" checked />
+          <span>Pronounce (en‑US)</span>
+        </label>
+
+        <label for="voiceSelect" class="pill">Voice:
+          <select id="voiceSelect" style="min-width: 210px;"></select>
+        </label>
+
+        <label for="rate" class="pill">Rate
+          <input id="rate" type="range" min="0.7" max="1.3" step="0.05" value="1.0" style="width: 140px;" />
+        </label>
+
+        <label for="volume" class="pill">Volume
+          <input id="volume" type="range" min="0" max="1" step="0.05" value="0.9" style="width: 140px;" />
+        </label>
+
+        <div class="grow"></div>
+
+        <button id="resetTextBtn" class="secondary">Reset Text</button>
+        <button id="repeatOnceBtn" class="secondary">Repeat Once</button>
+        <button id="toggleBtn">Start</button>
+        <button id="resetBtn" class="secondary">Reset</button>
+      </div>
+      <div class="hint" style="margin-top: 6px;">
+        Pick an <strong>American (en‑US)</strong> voice. If the list is empty, wait a moment or reload once.
+      </div>
+    </div>
+
+    <!-- OUTPUT AREA -->
+    <div class="card">
+      <div id="output" class="output" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <script>
+    // ---- Elements ----
+    const inputCard   = document.getElementById('inputCard');
+    const inputEl     = document.getElementById('inputText');
+    const submitBtn   = document.getElementById('submitBtn');
+
+    const controlCard = document.getElementById('controlCard');
+    const modeEl      = document.getElementById('mode');
+    const delayEl     = document.getElementById('delay');
+
+    const ttsEnabledEl = document.getElementById('ttsEnabled');
+    const voiceSelect  = document.getElementById('voiceSelect');
+    const rateEl       = document.getElementById('rate');
+    const volumeEl     = document.getElementById('volume');
+
+    const resetTextBtn  = document.getElementById('resetTextBtn');
+    const repeatOnceBtn = document.getElementById('repeatOnceBtn');
+    const toggleBtn     = document.getElementById('toggleBtn');
+    const resetBtn      = document.getElementById('resetBtn');
+
+    const outputEl    = document.getElementById('output');
+
+    // ---- State ----
+    let hiddenText = '';
+    let tokens = { arr: [], mode: null };
+    let index = 0;
+    let timer = null;
+    let isTyping = false;
+    let isPaused = false;
+    let outputBuffer = '';
+    let repeatQueue = 0;
+
+    // For char-mode pronunciation
+    let currentWordBuffer = '';
+
+    // ---- TTS (SpeechSynthesis) ----
+    let voices = [];
+    let voiceReady = false;
+
+    function loadVoices() {
+      voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+      voiceSelect.innerHTML = '';
+      if (!voices || voices.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'No voices available';
+        voiceSelect.appendChild(opt);
+        voiceReady = false;
+        return;
+      }
+
+      // Prefer en-US; fallback to en-*; else all
+      const enUS = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith('en-us'));
+      const enAll = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith('en-'));
+      const list = enUS.length ? enUS : (enAll.length ? enAll : voices);
+
+      list.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.name;
+        opt.textContent = `${v.name} — ${v.lang}`;
+        voiceSelect.appendChild(opt);
+      });
+
+      // Auto-select a good US voice if present
+      const preferredNames = [
+        'Google US English', 'Google en-US', 'Microsoft Aria', 'Microsoft Guy', 'Samantha',
+        'Allison', 'Joanna', 'Salli', 'Jenny', 'Zira', 'Matthew'
+      ].map(s => s.toLowerCase());
+
+      const exact = enUS.find(v => preferredNames.some(p => v.name.toLowerCase().includes(p)));
+      const first = enUS[0] || enAll[0] || voices[0];
+      voiceSelect.value = (exact || first).name;
+      voiceReady = true;
+    }
+
+    if ('speechSynthesis' in window) {
+      loadVoices();
+      // Some browsers load voices asynchronously
+      window.speechSynthesis.onvoiceschanged = () => {
+        loadVoices();
+      };
+    } else {
+      // No TTS support
+      voiceSelect.innerHTML = '<option value="">Speech not supported</option>';
+      voiceReady = false;
+    }
+
+    function getSelectedVoice() {
+      const name = voiceSelect.value;
+      return voices.find(v => v.name === name) || null;
+    }
+
+    function speakWord(word) {
+      if (!ttsEnabledEl.checked) return;
+      if (!voiceReady) return;
+      if (!word || !/\S/.test(word)) return;
+
+      // Cancel ongoing utterance to keep in sync with typing speed
+      try { window.speechSynthesis.cancel(); } catch (e) {}
+
+      const u = new SpeechSynthesisUtterance(word);
+      const v = getSelectedVoice();
+      if (v) {
+        u.voice = v;
+        // Ensure language matches selected voice (helps accent)
+        u.lang = v.lang || 'en-US';
+      } else {
+        u.lang = 'en-US';
+      }
+      u.rate = parseFloat(rateEl.value || '1.0');   // speed
+      u.volume = parseFloat(volumeEl.value || '0.9'); // volume
+      // u.pitch = 1.0; // (optional) add a pitch slider if you want
+
+      try { window.speechSynthesis.speak(u); } catch (e) {
+        // Ignore if speech is blocked
+      }
+    }
+
+    // ---- Tokenization ----
+    function tokenize(text, mode) {
+      if (mode === 'word') {
+        const NEWLINE = '__NEWLINE__';
+        const arr = text.replace(/\n/g, ` ${NEWLINE} `)
+                        .split(/\s+/)
+                        .filter(Boolean)
+                        .map(t => t === NEWLINE ? '\n' : t);
+        return { arr, mode: 'word' };
+      } else {
+        const arr = Array.from(text); // per character
+        return { arr, mode: 'char' };
+      }
+    }
+
+    // ---- Rendering ----
+    function renderNext() {
+      if (index >= tokens.arr.length) {
+        finishTyping();
+        return;
+      }
+      const t = tokens.arr[index++];
+
+      if (tokens.mode === 'word') {
+        if (t === '\n') {
+          outputBuffer += '\n';
+          currentWordBuffer = '';
+        } else {
+          outputBuffer += t + ' ';
+          // Pronounce each word as it appears
+          speakWord(t);
+        }
+      } else {
+        // Character mode
+        outputBuffer += t;
+        // Speak completed words at boundaries (space/newline/punctuation)
+        if (/\s/.test(t) || /[.,!?;:]/.test(t)) {
+          if (currentWordBuffer.trim().length) speakWord(currentWordBuffer.trim());
+          currentWordBuffer = '';
+        } else {
+          currentWordBuffer += t;
+        }
+      }
+
+      outputEl.textContent = outputBuffer;
+      outputEl.scrollTop = outputEl.scrollHeight;
+    }
+
+    function startTyping() {
+      if (isTyping) return;
+      if (!hiddenText) return;
+
+      if (index === 0 || tokens.arr.length === 0) {
+        tokens = tokenize(hiddenText, modeEl.value);
+        currentWordBuffer = '';
+      }
+      const delay = Math.max(0, Number(delayEl.value) || 0);
+      timer = setInterval(renderNext, delay);
+      isTyping = true;
+      isPaused = false;
+      toggleBtn.textContent = 'Pause';
+      setControlsDuringTyping(true);
+      outputEl.classList.add('with-cursor');
+
+      // Try to ensure audio is allowed after user action
+      try { window.speechSynthesis.resume(); } catch (e) {}
+    }
+
+    function pauseTyping() {
+      if (!isTyping) return;
+      clearInterval(timer);
+      timer = null;
+      isTyping = false;
+      isPaused = true;
+      toggleBtn.textContent = 'Resume';
+      setControlsDuringTyping(false);
+      outputEl.classList.add('with-cursor');
+
+      // Pause ongoing speech as well
+      try { window.speechSynthesis.pause(); } catch (e) {}
+    }
+
+    function resumeTyping() {
+      if (isTyping || !isPaused) return;
+      const delay = Math.max(0, Number(delayEl.value) || 0);
+      timer = setInterval(renderNext, delay);
+      isTyping = true;
+      isPaused = false;
+      toggleBtn.textContent = 'Pause';
+      setControlsDuringTyping(true);
+      outputEl.classList.add('with-cursor');
+
+      // Resume speech engine (won't auto-resume last word, but unblocks)
+      try { window.speechSynthesis.resume(); } catch (e) {}
+    }
+
+    function finishTyping() {
+      clearInterval(timer);
+      timer = null;
+
+      // If we were building a word in char mode and hit the end, pronounce it
+      if (tokens.mode === 'char' && currentWordBuffer.trim().length) {
+        speakWord(currentWordBuffer.trim());
+        currentWordBuffer = '';
+      }
+
+      if (repeatQueue > 0 && hiddenText) {
+        repeatQueue -= 1;
+        index = 0;
+        outputBuffer = '';
+        outputEl.textContent = '';
+        currentWordBuffer = '';
+        // Retokenize to reflect possible mode changes
+        tokens = tokenize(hiddenText, modeEl.value);
+        startTyping();
+        return;
+      }
+
+      isTyping = false;
+      isPaused = false;
+      toggleBtn.textContent = 'Start';
+      setControlsDuringTyping(false);
+      outputEl.classList.add('with-cursor');
+    }
+
+    function stopTypingCompletely() {
+      clearInterval(timer);
+      timer = null;
+      isTyping = false;
+      isPaused = false;
+      outputEl.classList.remove('with-cursor');
+      // Cancel any ongoing speech
+      try { window.speechSynthesis.cancel(); } catch (e) {}
+    }
+
+    function setControlsDuringTyping(active) {
+      modeEl.disabled = active;
+      delayEl.disabled = active && !isPaused;
+    }
+
+    // ---- Reset only printed text ----
+    function resetOnlyText() {
+      stopTypingCompletely();
+
+      outputBuffer = '';
+      outputEl.textContent = '';
+      index = 0;
+      tokens = { arr: [], mode: null };
+      repeatQueue = 0;
+      currentWordBuffer = '';
+
+      toggleBtn.textContent = 'Start';
+      modeEl.disabled = false;
+      delayEl.disabled = false;
+    }
+
+    // ---- Full Reset ----
+    function resetAll() {
+      stopTypingCompletely();
+
+      hiddenText = '';
+      tokens = { arr: [], mode: null };
+      index = 0;
+      outputBuffer = '';
+      outputEl.textContent = '';
+      repeatQueue = 0;
+      currentWordBuffer = '';
+
+      toggleBtn.textContent = 'Start';
+      modeEl.disabled = false;
+      delayEl.disabled = false;
+
+      controlCard.style.display = 'none';
+      inputCard.style.display = '';
+      inputEl.value = '';
+      setTimeout(() => inputEl.focus(), 0);
+    }
+
+    function submitInput() {
+      const text = (inputEl.value || '').trim();
+      if (!text) {
+        inputEl.focus();
+        return;
+      }
+      hiddenText = text;
+      inputEl.value = '';
+      inputCard.style.display = 'none';
+      controlCard.style.display = '';
+
+      tokens = { arr: [], mode: null };
+      index = 0;
+      outputBuffer = '';
+      outputEl.textContent = '';
+      repeatQueue = 0;
+      currentWordBuffer = '';
+      toggleBtn.textContent = 'Start';
+      modeEl.disabled = false;
+      delayEl.disabled = false;
+
+      startTyping();
+    }
+
+    // ---- Events ----
+    toggleBtn.addEventListener('click', () => {
+      if (!hiddenText) return;
+      if (!isTyping && !isPaused) {
+        startTyping();
+      } else if (isTyping) {
+        pauseTyping();
+      } else {
+        resumeTyping();
+      }
+    });
+
+    repeatOnceBtn.addEventListener('click', () => {
+      if (!hiddenText) return;
+      if (!isTyping && !isPaused && outputBuffer.length > 0) {
+        index = 0;
+        outputBuffer = '';
+        outputEl.textContent = '';
+        currentWordBuffer = '';
+        tokens = tokenize(hiddenText, modeEl.value);
+        startTyping();
+      } else {
+        repeatQueue += 1; // queue one replay after current run
+        repeatOnceBtn.disabled = true;
+        setTimeout(() => (repeatOnceBtn.disabled = false), 180);
+      }
+    });
+
+    resetTextBtn.addEventListener('click', resetOnlyText);
+    resetBtn.addEventListener('click', resetAll);
+    submitBtn.addEventListener('click', submitInput);
+
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        submitInput();
+      }
+    });
+
+    window.addEventListener('load', () => inputEl.focus());
+
+    // If user disables TTS, cancel any ongoing speech immediately
+    ttsEnabledEl.addEventListener('change', () => {
+      if (!ttsEnabledEl.checked) {
+        try { window.speechSynthesis.cancel(); } catch (e) {}
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Full‑Screen Chess — Time‑Budget AI + Online (Room Code)</title>
+<style>
+  :root{
+    --bg1:#0b1226; --bg2:#0f172a;
+    --light:#f0d9b5; --dark:#b58863;
+    --ui:#0b1020; --muted:#94a3b8; --text:#e5e7eb;
+    --accent:#22c55e; --info:#38bdf8; --warn:#ef4444;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg1),var(--bg2));color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+
+  header{
+    position:fixed; inset:0 0 auto 0; height:58px; display:flex; align-items:center; gap:10px; padding:8px 12px;
+    background:rgba(0,0,0,.35); border-bottom:1px solid rgba(255,255,255,.08); backdrop-filter:blur(8px); z-index:10;
+  }
+  .row{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+  select,button,textarea,input{
+    appearance:none; border:1px solid rgba(255,255,255,.18); background:#0b1020; color:#fff; border-radius:10px; padding:8px 10px; font-weight:700
+  }
+  button{cursor:pointer}
+  .btn{background:var(--accent); color:#06110a; border:none}
+  .btn.info{background:var(--info); color:#041018}
+  .btn.warn{background:var(--warn); color:#fff}
+  .pill{padding:6px 10px; border-radius:999px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); font-weight:800}
+
+  .stage{ position:fixed; inset:58px 0 0 0; display:grid; place-items:center; padding:10px; }
+
+  .board{ position:relative; width:600px; height:600px; border-radius:12px; overflow:hidden; box-shadow:0 18px 48px rgba(0,0,0,.45); }
+  .sq{ position:absolute; width:12.5%; height:12.5%; display:grid; place-items:center; font-size:clamp(18px,2.4vmin,22px); }
+  .light{background:var(--light)} .dark{background:var(--dark)}
+  .coord{ position:absolute; bottom:4px; left:6px; color:#0000008e; font-size:11px; user-select:none; pointer-events:none; }
+  .hintDot{ position:absolute; width:24%; height:24%; border-radius:999px; background:rgba(56,189,248,.78); box-shadow:0 0 0 2px rgba(255,255,255,.6) inset; transform:translate(-50%,-50%); left:50%; top:50%; }
+  .lastMove{ outline:4px solid rgba(255,255,0,.35); outline-offset:-4px } .checkSquare{ box-shadow:inset 0 0 0 4px rgba(239,68,68,.6) }
+
+  .pieces{ position:absolute; inset:0 }
+  .piece{
+    position:absolute; width:12.5%; height:12.5%; display:grid; place-items:center;
+    font-size:clamp(28px,6.8vmin,64px);
+    transition: left .12s ease, top .12s ease, opacity .12s ease;
+    user-select:none; left:0%; top:0%;
+  }
+  .piece.dragging{ transition:none; z-index:4; cursor:grabbing }
+  .ghostCapture{ opacity:0 }
+
+  .promo{ position:absolute; z-index:6; display:grid; grid-auto-flow:column; gap:2px; padding:4px; border-radius:8px; background:#0b1020cc; border:1px solid rgba(255,255,255,.25); }
+  .promo button{font-size:22px; padding:6px 8px; background:#1f2937; color:#fff; border:1px solid rgba(255,255,255,.25)}
+  .promo button:hover{background:#334155}
+
+  .flipped .pieces, .flipped .sq{ transform: rotate(180deg) } .flipped .coord{ transform: rotate(180deg) }
+
+  .drawerToggle{ position:fixed; right:10px; top:66px; z-index:12; }
+  .drawer{
+    position:fixed; right:10px; top:110px; bottom:10px; width:min(380px, 92vw);
+    background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12); border-radius:12px; padding:12px;
+    box-shadow:0 18px 40px rgba(0,0,0,.4); overflow:auto; display:none; z-index:12;
+  }
+  .drawer.open{display:block}
+  .log{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:13px; line-height:1.4; color:#dbeafe}
+  .log div{padding:2px 0; border-bottom:1px dashed rgba(255,255,255,.08)}
+  h3{margin:6px 0 8px 0} .small{color:var(--muted); font-size:12px}
+
+  /* Online mini-panel */
+  .netPanel{
+    position:fixed; left:10px; top:66px; z-index:12; display:flex; gap:8px; flex-wrap:wrap; align-items:center;
+    background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); border-radius:12px; padding:8px;
+  }
+  .netPanel textarea{ width:240px; height:68px; resize:vertical }
+  .netBadge{ padding:4px 8px; border-radius:999px; font-weight:800; border:1px solid rgba(255,255,255,.2); background:rgba(0,0,0,.35) }
+</style>
+</head>
+<body>
+  <header>
+    <div class="row">
+      <span class="pill">♟️ Chess</span>
+      <label class="small">Mode</label>
+      <select id="mode">
+        <option value="hvc" selected>Human vs Computer</option>
+        <option value="hvh">Human vs Human (same device)</option>
+        <option value="net">Online (Room Code)</option>
+      </select>
+
+      <label class="small">Computer Level</label>
+      <select id="level">
+        <option value="1">Beginner</option>
+        <option value="2" selected>Intermediate</option>
+        <option value="3">Advanced</option>
+        <option value="4">Master</option>
+        <option value="5">Brilliant</option>
+      </select>
+
+      <button id="flip" class="btn info">Flip</button>
+      <button id="undo" class="btn info">Undo</button>
+      <button id="reset" class="btn warn">Reset</button>
+    </div>
+    <div class="row">
+      <span class="pill">Turn: <b id="turnDisp">White</b></span>
+      <span class="pill">Status: <b id="status">Ready</b></span>
+      <span class="netBadge" id="netState" style="display:none">Offline</span>
+    </div>
+  </header>
+
+  <div class="stage">
+    <div class="board" id="board">
+      <div id="squares"></div>
+      <div class="pieces" id="pieces"></div>
+      <div id="promo" class="promo" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- Online controls -->
+  <div class="netPanel" id="netPanel" style="display:none">
+    <button class="btn" id="hostBtn">Create Room</button>
+    <button class="btn" id="joinBtn">Join Room</button>
+    <div class="small" style="flex-basis:100%"></div>
+    <div class="row" style="gap:6px">
+      <div class="small" style="width:100%">Host Code (copy to friend):</div>
+      <textarea id="hostCode" readonly></textarea>
+    </div>
+    <div class="row" style="gap:6px">
+      <div class="small" style="width:100%">Join Code (paste from friend):</div>
+      <textarea id="joinCode"></textarea>
+      <button class="btn info" id="completeBtn">Complete</button>
+    </div>
+    <div class="small" style="flex-basis:100%">Online mode disables AI and uses White=Host by default.</div>
+  </div>
+
+  <button class="btn drawerToggle" id="toggleDrawer">Move List</button>
+  <div class="drawer" id="drawer">
+    <h3>Move List</h3>
+    <div id="movelist" class="log"></div>
+    <h3 style="margin-top:12px">Tips</h3>
+    <ul class="small">
+      <li>Click or drag pieces. Legal targets show blue dots.</li>
+      <li>Castling, en passant, promotion, check/mate supported.</li>
+      <li>Use Flip, Undo, Reset anytime. Game auto‑saves locally.</li>
+      <li>Online mode: Create Room → copy Host Code → friend joins → paste Join Code back → Connected.</li>
+    </ul>
+  </div>
+
+<script>
+(()=>{
+// ===== Helpers =====
+const $=id=>document.getElementById(id);
+const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
+const files=['a','b','c','d','e','f','g','h'];
+const UPIECES={K:'♔',Q:'♕',R:'♖',B:'♗',N:'♘',P:'♙',k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟'};
+const START_FEN='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+const isW=p=>p && p===p.toUpperCase(); const isB=p=>p && p===p.toLowerCase();
+
+// ===== State & UI =====
+let state=load()||{fen:START_FEN, mode:'hvc', level:2, flipped:false, history:[], lastMove:null};
+let pos=parseFEN(state.fen);
+$('mode').value=state.mode; $('level').value=String(state.level);
+
+// DOM refs
+const boardEl=$('board'), squaresEl=$('squares'), piecesEl=$('pieces'), promoEl=$('promo');
+
+// ===== Build 64 squares =====
+const SQS=[];
+for(let r=0;r<8;r++){
+  for(let f=0;f<8;f++){
+    const i=r*8+f; const s=document.createElement('div');
+    s.className='sq '+(((r+f)%2===0)?'light':'dark');
+    s.style.left=(f*12.5)+'%'; s.style.top=((7-r)*12.5)+'%';
+    s.dataset.idx=i;
+    if(r===0){ const c=document.createElement('div'); c.className='coord'; c.textContent=files[f]; s.appendChild(c); }
+    if(f===0){ const c=document.createElement('div'); c.className='coord'; c.style.left='auto'; c.style.right='6px'; c.textContent=String(r+1); s.appendChild(c); }
+    SQS.push(s); squaresEl.appendChild(s);
+  }
+}
+
+// ===== Full-screen sizing =====
+function sizeBoard(){
+  const headerH=document.querySelector('header').offsetHeight||58;
+  const availW=window.innerWidth-20, availH=window.innerHeight-headerH-20;
+  const size=Math.max(260, Math.min(availW, availH));
+  boardEl.style.width=size+'px'; boardEl.style.height=size+'px';
+}
+window.addEventListener('resize', sizeBoard); sizeBoard();
+
+// ===== FEN / board utilities =====
+function parseFEN(fen){
+  const [board, side, castle, ep, halfmove, fullmove]=fen.split(' ');
+  const arr=new Array(64).fill(null); let row=56;
+  for(const part of board.split('/')){
+    let f=0;
+    for(const ch of part){
+      if(/\d/.test(ch)) f+=+ch;
+      else { arr[row+f]=ch; f++; }
+    } row-=8;
+  }
+  return {board:arr, side, castle, ep:(ep==='-'?null:alg2idx(ep)), halfmove:+(halfmove||0), fullmove:+(fullmove||1)};
+}
+function toFEN(p){
+  let s=''; for(let r=7;r>=0;r--){
+    let empty=0; for(let f=0;f<8;f++){
+      const pc=p.board[r*8+f]; if(!pc) empty++; else { if(empty){ s+=empty; empty=0; } s+=pc; }
+    } if(empty) s+=empty; if(r>0) s+='/';
+  }
+  s+=' '+p.side+' '+(p.castle||'-')+' '+(p.ep? idx2alg(p.ep): '-')+' '+(p.halfmove||0)+' '+(p.fullmove||1);
+  return s;
+}
+function alg2idx(a){ const f=files.indexOf(a[0]); const r=parseInt(a[1],10)-1; return r*8+f; }
+function idx2alg(i){ const f=i%8; const r=Math.floor(i/8); return files[f]+(r+1); }
+function onBoard(i){ return i>=0 && i<64; }
+function near(a,b){ const df=Math.abs((a%8)-(b%8)), dr=Math.abs(Math.floor(a/8)-Math.floor(b/8)); return df<=1 && dr<=1; }
+
+// ===== Move generation (legal) =====
+function genMoves(p){
+  const out=[];
+  for(let i=0;i<64;i++){
+    const pc=p.board[i]; if(!pc) continue;
+    if(p.side==='w' && !isW(pc)) continue;
+    if(p.side==='b' && !isB(pc)) continue;
+    const t=pc.toLowerCase();
+    if(t==='p') genPawn(p,i,out); else if(t==='n') genKnight(p,i,out);
+    else if(t==='b') genSlide(p,i,out,[9,7,-9,-7]);
+    else if(t==='r') genSlide(p,i,out,[8,-8,1,-1]);
+    else if(t==='q') genSlide(p,i,out,[9,7,-9,-7,8,-8,1,-1]);
+    else if(t==='k') genKing(p,i,out);
+  }
+  // legal filter
+  return out.filter(m=>{
+    const snap=doMove(p,m);
+    const mover=(p.side==='w'?'b':'w'); // the side that just moved
+    const ok=!inCheck(p,mover);
+    undoMove(p,snap);
+    return ok;
+  });
+}
+function genPawn(p,i,out){
+  const dir=(p.side==='w')?1:-1; const r=Math.floor(i/8), f=i%8;
+  const start=(p.side==='w')?1:6, promoRank=(p.side==='w')?7:0;
+  const one=i+8*dir;
+  if(onBoard(one) && !p.board[one]){
+    add(i,one,false);
+    const two=i+16*dir; if(r===start && !p.board[two]) out.push({from:i,to:two,piece:p.board[i],epSet:i+8*dir});
+  }
+  for(const df of [-1,1]){
+    const to=i+8*dir+df; if(!onBoard(to)) continue;
+    const tf=to%8; if(Math.abs(tf-f)!==1) continue;
+    const tgt=p.board[to];
+    if(tgt && ((p.side==='w')?isB(tgt):isW(tgt))) add(i,to,true);
+    if(p.ep===to && !tgt) out.push({from:i,to, piece:p.board[i], ep:true});
+  }
+  function add(from,to,capt){
+    const tr=Math.floor(to/8);
+    if(tr===promoRank){
+      for(const pr of (p.side==='w'?['Q','R','B','N']:['q','r','b','n'])){
+        out.push({from,to,piece:p.board[from],capture:capt?p.board[to]:undefined,promo:pr});
+      }
+    }else out.push({from,to,piece:p.board[from],capture:capt?p.board[to]:undefined});
+  }
+}
+function genKnight(p,i,out){
+  for(const d of [15,17,10,6,-15,-17,-10,-6]){
+    const to=i+d; if(!onBoard(to)) continue;
+    const f1=i%8,f2=to%8; if(Math.max(f1,f2)-Math.min(f1,f2)>2) continue;
+    const tgt=p.board[to];
+    if(!tgt || (p.side==='w'?isB(tgt):isW(tgt))) out.push({from:i,to,piece:p.board[i],capture:tgt||undefined});
+  }
+}
+function sameLine(from,to,d){
+  if(Math.abs(d)===1) return Math.floor(from/8)===Math.floor(to/8);
+  if(Math.abs(d)===8) return true;
+  if(Math.abs(d)===9||Math.abs(d)===7){
+    const df=Math.abs((from%8)-(to%8)), dr=Math.abs(Math.floor(from/8)-Math.floor(to/8)); return df===dr;
+  } return false;
+}
+function genSlide(p,i,out,dirs){
+  for(const d of dirs){
+    let to=i+d;
+    while(onBoard(to) && sameLine(i,to,d)){
+      const tgt=p.board[to];
+      if(!tgt) out.push({from:i,to,piece:p.board[i]});
+      else { if(p.side==='w'?isB(tgt):isW(tgt)) out.push({from:i,to,piece:p.board[i],capture:tgt}); break; }
+      to+=d;
+    }
+  }
+}
+function genKing(p,i,out){
+  for(const df of [-1,0,1]){
+    for(const dr of [-1,0,1]){
+      if(!df && !dr) continue;
+      const to=i+df+dr*8; if(!onBoard(to) || !near(i,to)) continue;
+      const tgt=p.board[to];
+      if(!tgt || (p.side==='w'?isB(tgt):isW(tgt))) out.push({from:i,to,piece:p.board[i],capture:tgt||undefined});
+    }
+  }
+  if(p.side==='w'){
+    if(p.castle.includes('K') && !p.board[5] && !p.board[6] && !isAtt(p,4,'b') && !isAtt(p,5,'b') && !isAtt(p,6,'b')) out.push({from:4,to:6,piece:'K',castle:'K'});
+    if(p.castle.includes('Q') && !p.board[1] && !p.board[2] && !p.board[3] && !isAtt(p,4,'b') && !isAtt(p,3,'b') && !isAtt(p,2,'b')) out.push({from:4,to:2,piece:'K',castle:'Q'});
+  }else{
+    if(p.castle.includes('k') && !p.board[61] && !p.board[62] && !isAtt(p,60,'w') && !isAtt(p,61,'w') && !isAtt(p,62,'w')) out.push({from:60,to:62,piece:'k',castle:'k'});
+    if(p.castle.includes('q') && !p.board[57] && !p.board[58] && !p.board[59] && !isAtt(p,60,'w') && !isAtt(p,59,'w') && !isAtt(p,58,'w')) out.push({from:60,to:58,piece:'k',castle:'q'});
+  }
+}
+function kSq(p,side){ const k=(side==='w')?'K':'k'; for(let i=0;i<64;i++) if(p.board[i]===k) return i; return -1; }
+function isAtt(p,sq,bySide){
+  const dir=(bySide==='w')?1:-1;
+  for(const df of [-1,1]){
+    const from=sq-8*dir-df;
+    if(onBoard(from) && p.board[from]===(bySide==='w'?'P':'p')){
+      const f1=from%8,f2=sq%8; if(Math.abs(f1-f2)===1) return true;
+    }
+  }
+  for(const d of [15,17,10,6,-15,-17,-10,-6]){
+    const from=sq-d; if(!onBoard(from)) continue;
+    const f1=from%8,f2=sq%8; if(Math.max(f1,f2)-Math.min(f1,f2)>2) continue;
+    if(p.board[from]===(bySide==='w'?'N':'n')) return true;
+  }
+  for(const d of [8,-8,1,-1,9,7,-9,-7]){
+    let from=sq-d;
+    while(onBoard(from) && sameLine(sq,from,d)){
+      const pc=p.board[from];
+      if(pc){
+        if(bySide==='w'?isW(pc):isB(pc)){
+          const t=pc.toLowerCase();
+          if((Math.abs(d)===1||Math.abs(d)===8) && (t==='r'||t==='q')) return true;
+          if((Math.abs(d)===7||Math.abs(d)===9) && (t==='b'||t==='q')) return true;
+          if(t==='k' && near(from,sq)) return true;
+        } break;
+      } from-=d;
+    }
+  } return false;
+}
+function inCheck(p,side){ const k=kSq(p,side); return k>=0 && isAtt(p,k, side==='w'?'b':'w'); }
+
+// ===== Make/Undo =====
+function doMove(p,m){
+  const snap=JSON.parse(JSON.stringify(p));
+  p.halfmove=(m.capture||m.piece.toLowerCase()==='p')?0:(p.halfmove||0)+1;
+  if(p.side==='b') p.fullmove=(p.fullmove||1)+1;
+  p.ep=null;
+  const mover=p.board[m.from]; p.board[m.from]=null;
+  if(m.ep){ const dir=(snap.side==='w')?1:-1; p.board[m.to-8*dir]=null; }
+  if(m.castle){
+    if(m.castle==='K'){ p.board[5]=p.board[7]; p.board[7]=null; }
+    if(m.castle==='Q'){ p.board[3]=p.board[0]; p.board[0]=null; }
+    if(m.castle==='k'){ p.board[61]=p.board[63]; p.board[63]=null; }
+    if(m.castle==='q'){ p.board[59]=p.board[56]; p.board[56]=null; }
+  }
+  p.board[m.to]= m.promo? m.promo : mover;
+  const rm=c=>{ if(p.castle && p.castle.includes(c)) p.castle=p.castle.replace(c,''); };
+  if(mover==='K'){ rm('K'); rm('Q'); } if(mover==='k'){ rm('k'); rm('q'); }
+  if(m.from===0 || m.to===0) rm('Q'); if(m.from===7 || m.to===7) rm('K');
+  if(m.from===56 || m.to===56) rm('q'); if(m.from===63 || m.to===63) rm('k');
+  if(!p.castle||p.castle==='') p.castle='-';
+  if(m.epSet) p.ep=m.epSet;
+  p.side=(p.side==='w'?'b':'w');
+  return snap;
+}
+function undoMove(p,snap){ Object.assign(p,snap); }
+
+// ===== Time‑budget AI (iterative deepening + simple cache) =====
+const VAL={p:100,n:320,b:330,r:500,q:900,k:20000};
+function evalPos(p){
+  let s=0;
+  for(let i=0;i<64;i++){ const pc=p.board[i]; if(pc) s += (isW(pc)?1:-1) * VAL[pc.toLowerCase()]; }
+  s += (p.side==='w'?1:-1) * (genMoves(p).length*2);
+  return s;
+}
+function budgetMs(level){
+  switch(+level){
+    case 1: return 300;
+    case 2: return 800;
+    case 3: return 1800;
+    case 4: return 3000;
+    case 5: return 4500;
+    default: return 1000;
+  }
+}
+function scoreKey(p){ return toFEN(p); } // simple TT key by FEN
+const TT=new Map(); const HIST=new Map();
+function histInc(m,inc){ const k=m.from+'-'+m.to; HIST.set(k,(HIST.get(k)||0)+inc); }
+function histScore(m){ return HIST.get(m.from+'-'+m.to)||0; }
+function orderMoves(list){
+  // captures first, then history
+  return list.sort((a,b)=>{
+    const ac=a.capture?1:0, bc=b.capture?1:0;
+    if(bc!==ac) return bc-ac;
+    return histScore(b)-histScore(a);
+  });
+}
+function aiBestTimed(level){
+  const deadline=performance.now()+budgetMs(level);
+  let best=null, bestScore=-Infinity; let depth=1;
+  // iterative deepening
+  while(true){
+    const res=searchDepth(depth, -Infinity, Infinity, deadline);
+    if(res.timedOut) break;
+    best=res.best; bestScore=res.score; if(res.mateFound) break; depth++;
+    if(depth>7) break; // practical cap (you can raise if fast)
+  }
+  return best;
+}
+function searchDepth(targetDepth, alpha, beta, deadline){
+  let timedOut=false, mateFound=false, best=null, bestScore=-Infinity;
+  const moves=orderMoves(genMoves(pos));
+  if(!moves.length){
+    const sc = inCheck(pos,pos.side)? -999999 : 0;
+    return {score:sc,best:null,timedOut:false,mateFound:false};
+  }
+  for(const m of moves){
+    if(performance.now()>deadline){ timedOut=true; break; }
+    const snap=doMove(pos,m);
+    const sc=-negamax(targetDepth-1,-beta,-alpha,deadline);
+    undoMove(pos,snap);
+    if(sc>bestScore){ bestScore=sc; best=m; }
+    if(sc>alpha){ alpha=sc; }
+    if(alpha>=beta){ histInc(m, 1<<targetDepth); break; }
+    histInc(m, 1);
+  }
+  if(Math.abs(bestScore)>900000) mateFound=true;
+  return {score:bestScore, best, timedOut, mateFound};
+}
+function negamax(depth, alpha, beta, deadline){
+  if(performance.now()>deadline) return 0; // cutoff as drawish neutral
+  const key=scoreKey(pos)+'|d'+depth;
+  if(TT.has(key)){ const v=TT.get(key); if(v.depth>=depth) return v.score; }
+  if(depth===0) return evalPos(pos)*(pos.side==='w'?1:-1);
+  const moves=orderMoves(genMoves(pos));
+  if(!moves.length) return inCheck(pos,pos.side)? -999999+depth : 0;
+  let best=-Infinity;
+  for(const m of moves){
+    const snap=doMove(pos,m);
+    const sc=-negamax(depth-1,-beta,-alpha,deadline);
+    undoMove(pos,snap);
+    if(sc>best) best=sc;
+    if(sc>alpha) alpha=sc;
+    if(alpha>=beta){ histInc(m, 1<<depth); break; }
+  }
+  TT.set(key,{score:best, depth});
+  return best;
+}
+
+// ===== Rendering =====
+function setPieceXY(el,idx){ const f=idx%8, r=Math.floor(idx/8); el.style.left=(f*12.5)+'%'; el.style.top=((7-r)*12.5)+'%'; }
+function renderAll(){
+  boardEl.classList.toggle('flipped', !!state.flipped);
+  SQS.forEach(s=>{ s.classList.remove('lastMove','checkSquare'); [...s.querySelectorAll('.hintDot')].forEach(d=>d.remove()); });
+  if(state.lastMove){ SQS[state.lastMove.from].classList.add('lastMove'); SQS[state.lastMove.to].classList.add('lastMove'); }
+  if(inCheck(pos,pos.side)){ const k=kSq(pos,pos.side); if(k>=0) SQS[k].classList.add('checkSquare'); }
+  piecesEl.innerHTML='';
+  for(let i=0;i<64;i++){ const pc=pos.board[i]; if(!pc) continue;
+    const el=document.createElement('div'); el.className='piece'; el.textContent=UPIECES[pc]; el.dataset.idx=i; el.dataset.p=pc; setPieceXY(el,i); piecesEl.appendChild(el);
+  }
+  $('turnDisp').textContent=(pos.side==='w'?'White':'Black'); $('status').textContent=statusText(); save();
+}
+function renderMovesList(){
+  const log=$('movelist'); log.innerHTML='';
+  let ply=1,row=[];
+  for(const h of state.history){
+    if(h.plySide==='w'){ row=[`${ply}. ${h.san}`]; }
+    else{ row.push(h.san); const d=document.createElement('div'); d.textContent=row.join(' '); log.appendChild(d); ply++; row=[]; }
+  }
+  if(row.length){ const d=document.createElement('div'); d.textContent=row.join(' '); log.appendChild(d); }
+}
+function statusText(){
+  const ms=genMoves(pos);
+  if(!ms.length) return inCheck(pos,pos.side)?'Checkmate':'Stalemate';
+  if(state.mode==='hvc') return (pos.side==='w'?'White (You)':'Black (Computer)')+' to move';
+  if(state.mode==='net') return (pos.side==='w'?'White':'Black')+' to move (Online)';
+  return (pos.side==='w'?'White':'Black')+' to move';
+}
+
+// ===== SAN, play, and turn handling =====
+function san(p,m){
+  const pc=p.board[m.from]; const letter=({p:'',n:'N',b:'B',r:'R',q:'Q',k:'K'})[pc.toLowerCase()];
+  const cap=(m.capture||m.ep)?'x':''; const target=idx2alg(m.to); const promo=m.promo? '='+m.promo.toUpperCase() : '';
+  if(m.castle) return (m.to===6||m.to===62)?'O-O':'O-O-O';
+  let prefix=letter; if(pc.toLowerCase()==='p' && cap) prefix=files[m.from%8];
+  const snap=doMove(p,m); const legal=genMoves(p); const end=(!legal.length)?(inCheck(p,p.side)?'#':''): (inCheck(p,p.side)?'+':''); undoMove(p,snap);
+  return prefix+cap+target+promo+end;
+}
+function applyMove(m){
+  const capEl=piecesEl.querySelector(`.piece[data-idx="${m.to}"]`); if(capEl){ capEl.classList.add('ghostCapture'); setTimeout(()=>capEl.remove(),120); }
+  const mover=piecesEl.querySelector(`.piece[data-idx="${m.from}"]`); if(mover){ setPieceXY(mover,m.to); mover.dataset.idx=m.to; }
+  if(m.castle){
+    if(m.castle==='K'){ const r=piecesEl.querySelector(`.piece[data-idx="7"]`); if(r){ setPieceXY(r,5); r.dataset.idx=5; } }
+    if(m.castle==='Q'){ const r=piecesEl.querySelector(`.piece[data-idx="0"]`); if(r){ setPieceXY(r,3); r.dataset.idx=3; } }
+    if(m.castle==='k'){ const r=piecesEl.querySelector(`.piece[data-idx="63"]`); if(r){ setPieceXY(r,61); r.dataset.idx=61; } }
+    if(m.castle==='q'){ const r=piecesEl.querySelector(`.piece[data-idx="56"]`); if(r){ setPieceXY(r,59); r.dataset.idx=59; } }
+  }
+  const SAN=san(pos,m); const plySide=pos.side;
+  state.history.push({fen:toFEN(pos), san:SAN, plySide, uci:idx2alg(m.from)+idx2alg(m.to)});
+  state.lastMove={from:m.from,to:m.to};
+  const snap=doMove(pos,m);
+  if(m.ep){ const dir=(plySide==='w')?1:-1; const capSq=m.to-8*dir; const el=piecesEl.querySelector(`.piece[data-idx="${capSq}"]`); if(el){ el.classList.add('ghostCapture'); setTimeout(()=>el.remove(),120); } }
+  if(m.promo && mover){ mover.textContent=UPIECES[m.promo]; }
+  renderAll(); renderMovesList();
+}
+function playMoveLocal(m){
+  clearHints(); applyMove(m);
+  const legal=genMoves(pos);
+  if(!legal.length){ $('status').textContent=inCheck(pos,pos.side)?'Checkmate':'Stalemate'; return; }
+  // AI reply (only in hvc and computer is to move)
+  if(state.mode==='hvc' && pos.side==='b'){
+    $('status').textContent='Computer thinking...';
+    setTimeout(()=>{ const best=aiBestTimed(state.level); if(best) playMoveLocal(best); }, 80);
+  }
+  // Online: send move if connected
+  if(state.mode==='net' && net.connected){
+    net.sendMove(m);
+  }
+}
+
+// ===== Selection / Drag =====
+let selected=null, drag=null;
+squaresEl.addEventListener('click',(e)=>{
+  const sq=e.target.closest('.sq'); if(!sq) return; const idx=+sq.dataset.idx;
+  if(selected!=null){ const mv=findMove(selected,idx); if(mv){ playMoveLocal(mv); selected=null; clearHints(); return; } }
+  const pc=pos.board[idx];
+  if(pc && ((pos.side==='w'&&isW(pc))||(pos.side==='b'&&isB(pc)))){ selected=idx; showHints(idx); } else { selected=null; clearHints(); }
+});
+piecesEl.addEventListener('mousedown', startDrag);
+piecesEl.addEventListener('touchstart', startDrag, {passive:false});
+document.addEventListener('mousemove', moveDrag);
+document.addEventListener('touchmove', moveDrag, {passive:false});
+document.addEventListener('mouseup', endDrag);
+document.addEventListener('touchend', endDrag);
+
+function startDrag(e){
+  const p=e.target.closest('.piece'); if(!p) return;
+  const idx=+p.dataset.idx; const pc=pos.board[idx]; if(!pc) return;
+  if(!((pos.side==='w'&&isW(pc))||(pos.side==='b'&&isB(pc)))) return;
+  e.preventDefault(); selected=idx; showHints(idx);
+  const left=parseFloat(p.style.left)||0, top=parseFloat(p.style.top)||0;
+  const rect=boardEl.getBoundingClientRect();
+  drag={idx, el:p, startX:('touches'in e?e.touches[0].clientX:e.clientX), startY:('touches'in e?e.touches[0].clientY:e.clientY),
+        left, top, legal:new Set(genMoves(pos).filter(x=>x.from===idx).map(x=>x.to))};
+  p.classList.add('dragging');
+}
+function moveDrag(e){
+  if(!drag) return;
+  const nowX=('touches'in e?e.touches[0].clientX:e.clientX), nowY=('touches'in e?e.touches[0].clientY:e.clientY);
+  const rect=boardEl.getBoundingClientRect();
+  const dx=(nowX-drag.startX)/rect.width*100, dy=(nowY-drag.startY)/rect.height*100;
+  drag.el.style.left=(drag.left+dx)+'%'; drag.el.style.top=(drag.top+dy)+'%';
+}
+function endDrag(e){
+  if(!drag) return;
+  const rect=boardEl.getBoundingClientRect();
+  const endX=('changedTouches'in e?e.changedTouches[0].clientX:('touches'in e&&e.touches[0]?e.touches[0].clientX:e.clientX));
+  const endY=('changedTouches'in e?e.changedTouches[0].clientY:('touches'in e&&e.touches[0]?e.touches[0].clientY:e.clientY));
+  const relX=clamp((endX-rect.left)/rect.width,0,1), relY=clamp((endY-rect.top)/rect.height,0,1);
+  const file=Math.min(7,Math.max(0,Math.floor(relX*8))), rank=7-Math.min(7,Math.max(0,Math.floor(relY*8)));
+  const idx=rank*8+file;
+  drag.el.classList.remove('dragging');
+  let played=false; if(drag.legal.has(idx)){ const mv=findMove(drag.idx,idx); if(mv){ playMoveLocal(mv); played=true; } }
+  if(!played) setPieceXY(drag.el, drag.idx);
+  drag=null;
+}
+function showHints(from){ clearHints(); const ms=genMoves(pos).filter(m=>m.from===from); for(const m of ms){ const d=document.createElement('div'); d.className='hintDot'; SQS[m.to].appendChild(d); } }
+function clearHints(){ SQS.forEach(s=>[...s.querySelectorAll('.hintDot')].forEach(d=>d.remove())); }
+function findMove(from,to){ const list=genMoves(pos).filter(m=>m.from===from && m.to===to); if(!list.length) return null; if(list.some(m=>m.promo)){ showPromo(from,to,list); return null; } return list[0]; }
+function showPromo(from,to,list){
+  promoEl.innerHTML=''; promoEl.style.display='grid';
+  const f=to%8, r=Math.floor(to/8); promoEl.style.left=(f*12.5)+'%'; promoEl.style.top=((7-r)*12.5)+'%';
+  const opts=(pos.side==='w')?['Q','R','B','N']:['q','r','b','n'];
+  for(const pr of opts){ const b=document.createElement('button'); b.textContent=UPIECES[pr]; b.onclick=()=>{ promoEl.style.display='none'; const mv=list.find(m=>m.promo===pr)||list[0]; playMoveLocal(mv); }; promoEl.appendChild(b); }
+}
+
+// ===== Controls & drawer =====
+$('flip').onclick=()=>{ state.flipped=!state.flipped; save(); renderAll(); };
+$('undo').onclick=()=>{
+  const h=state.history.pop(); if(!h) return;
+  state.fen=h.fen; state.lastMove=null; pos=parseFEN(state.fen); renderAll(); renderMovesList();
+};
+$('reset').onclick=()=>{
+  if(confirm('Reset to initial position?')){
+    state={fen:START_FEN, mode:$('mode').value, level:+$('level').value, flipped:false, history:[], lastMove:null};
+    pos=parseFEN(state.fen); save(); renderAll(); renderMovesList();
+  }
+};
+$('mode').onchange=e=>{
+  state.mode=e.target.value; save(); renderAll();
+  const netUI=(state.mode==='net'); $('netPanel').style.display=netUI?'flex':'none'; $('netState').style.display=netUI?'inline-block':'none';
+  if(!netUI && net.connected) net.disconnect();
+};
+$('level').onchange=e=>{ state.level=+e.target.value; save(); };
+$('toggleDrawer').onclick=()=>{ $('drawer').classList.toggle('open'); };
+
+// ===== Save/Load =====
+function save(){ state.fen=toFEN(pos); try{ localStorage.setItem('fullScreenChess_online', JSON.stringify(state)); }catch(e){} }
+function load(){ try{ return JSON.parse(localStorage.getItem('fullScreenChess_online')); }catch(e){ return null; } }
+
+// ===== Online (WebRTC, copy/paste codes) =====
+const net = {
+  pc: null, dc: null, connected:false, role:null, // 'host' or 'join'
+  async create(){
+    this.cleanup();
+    this.role='host';
+    this.pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+    this.dc=this.pc.createDataChannel('chess');
+    this.wire();
+    const offer=await this.pc.createOffer(); await this.pc.setLocalDescription(offer);
+    const code=btoa(JSON.stringify(offer)); $('hostCode').value=code; $('status').textContent='Share Host Code, wait for Join Code...';
+    $('netState').textContent='Waiting...';
+  },
+  async complete(answerCode){
+    try{
+      const ans=JSON.parse(atob(answerCode.trim()));
+      await this.pc.setRemoteDescription(new RTCSessionDescription(ans));
+      $('status').textContent='Connected. You are White (host).'; $('netState').textContent='Online';
+      this.connected=true;
+    }catch(e){ alert('Invalid Join Code'); }
+  },
+  async join(hostCode){
+    this.cleanup();
+    this.role='join';
+    this.pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+    this.pc.ondatachannel=(ev)=>{ this.dc=ev.channel; this.wire(); };
+    const offer=JSON.parse(atob(hostCode.trim()));
+    await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer=await this.pc.createAnswer(); await this.pc.setLocalDescription(answer);
+    $('joinCode').value=btoa(JSON.stringify(answer));
+    $('status').textContent='Send Join Code back to Host.'; $('netState').textContent='Joining...';
+  },
+  wire(){
+    if(!this.dc) return;
+    this.dc.onopen=()=>{ $('netState').textContent='Online'; this.connected=true; $('status').textContent='Connected. Host plays White.'; };
+    this.dc.onclose=()=>{ $('netState').textContent='Offline'; this.connected=false; $('status').textContent='Peer disconnected.'; };
+    this.dc.onmessage=(ev)=>{ this.onMessage(ev.data); };
+  },
+  onMessage(msg){
+    const o=JSON.parse(msg);
+    if(o.type==='move'){
+      // remote sent UCI like "e2e4" and possible promo "q"
+      const from=alg2idx(o.uci.slice(0,2)); const to=alg2idx(o.uci.slice(2,4));
+      const list=genMoves(pos).filter(m=>m.from===from && m.to===to);
+      let mv=list[0];
+      if(o.promo && list.length>1){ mv=list.find(m=>m.promo && m.promo.toLowerCase()===o.promo) || mv; }
+      if(mv) applyMove(mv);
+    }else if(o.type==='reset'){ $('reset').click(); }
+  },
+  sendMove(m){
+    if(!this.connected||!this.dc) return;
+    const uci=idx2alg(m.from)+idx2alg(m.to);
+    const promo=m.promo? m.promo.toLowerCase() : null;
+    this.dc.send(JSON.stringify({type:'move', uci, promo}));
+  },
+  disconnect(){ try{ this.dc && this.dc.close(); this.pc && this.pc.close(); }catch(e){} this.connected=false; this.pc=null; this.dc=null; this.role=null; $('netState').textContent='Offline'; },
+  cleanup(){ this.disconnect(); }
+};
+
+$('hostBtn').onclick=()=>net.create();
+$('joinBtn').onclick=()=>{
+  const code=$('hostCode').value.trim() || prompt('Paste Host Code'); if(!code) return;
+  net.join(code);
+};
+$('completeBtn').onclick=()=>{
+  const code=$('joinCode').value.trim(); if(!code) return;
+  net.complete(code);
+};
+
+// ===== Start =====
+renderAll(); renderMovesList();
+if(state.mode==='net'){ $('netPanel').style.display='flex'; $('netState').style.display='inline-block'; }
+})();</script>
+</body>
+</html>
